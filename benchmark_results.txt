@@ -1,0 +1,6 @@
+TaskFlow Section 2 benchmark — comparison counts
+  size |   insertion_sort (title) |  binary_search (title) |  linear_search (title)
+------------------------------------------------------------------------------------------
+    10 |                       31 |                      3 |                      1
+   500 |                    64696 |                      8 |                    442
+  3000 |                  2264605 |                     11 |                   2860

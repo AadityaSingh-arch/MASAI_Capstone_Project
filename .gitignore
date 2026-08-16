@@ -1,0 +1,6 @@
+venv/
+__pycache__/
+*.pyc
+backend/taskflow.db
+*.db
+.DS_Store

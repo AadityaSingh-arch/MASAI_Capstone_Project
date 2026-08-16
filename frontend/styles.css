@@ -1,0 +1,533 @@
+/* ---------------------------------------------------------------------
+   TaskFlow dashboard styles
+   Palette: deep ink background panels on a warm neutral canvas, a single
+   signal-green accent borrowed from dark-store "in stock" indicators, and
+   an amber accent for the AI quick-add path so it reads as distinct from
+   the manual form.
+--------------------------------------------------------------------- */
+
+:root {
+  --canvas: #f6f5f1;
+  --ink: #14231d;
+  --panel: #ffffff;
+  --panel-border: #dedad0;
+  --accent: #1f8a52;      /* signal green */
+  --accent-dark: #146239;
+  --accent-ai: #c96a1f;   /* amber for AI quick-add */
+  --danger: #b3261e;
+  --muted: #6b7368;
+  --radius: 10px;
+  --font-display: "Georgia", "Iowan Old Style", serif;
+  --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-body);
+  line-height: 1.5;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ------------------------------ Header ------------------------------ */
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 16px 28px;
+  background: var(--ink);
+  color: #f6f5f1;
+  border-bottom: 3px solid var(--accent);
+}
+
+.app-header__brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.app-header__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.app-header h1 {
+  font-family: var(--font-display);
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.app-header__tagline {
+  margin: 2px 0 0;
+  font-size: 0.8rem;
+  color: #c9d2cb;
+}
+
+.app-header__controls {
+  display: flex;
+  gap: 10px;
+}
+
+.app-header__controls select {
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid #33443b;
+  background: #1c2c24;
+  color: #f6f5f1;
+}
+
+/* ------------------------------ Layout ------------------------------ */
+.app-main {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 24px 20px 60px;
+}
+
+.stats-bar {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+/* Split screen: left = task creation, right = sort + list */
+.split-layout {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  align-items: start;
+  gap: 20px;
+}
+
+.split-layout__left,
+.split-layout__right {
+  margin-bottom: 0;
+}
+
+.stats-bar__card {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  padding: 14px 10px;
+  text-align: center;
+}
+
+.stats-bar__value {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  color: var(--accent-dark);
+}
+
+.stats-bar__label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+/* ------------------------------ Panels ------------------------------ */
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  padding: 20px 22px;
+  margin-bottom: 20px;
+}
+
+.panel--sticky {
+  position: sticky;
+  top: 78px;
+  z-index: 10;
+}
+
+.panel__title {
+  font-family: var(--font-display);
+  margin: 0 0 12px;
+  font-size: 1.05rem;
+}
+
+.panel__title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.panel__title-row .panel__title {
+  margin: 0;
+}
+
+.panel__title-row select {
+  padding: 8px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: #fdfcfa;
+  font-size: 0.85rem;
+}
+
+.panel__divider {
+  border: none;
+  border-top: 1px dashed var(--panel-border);
+  margin: 18px 0;
+}
+
+/* ------------------------------ Forms ------------------------------ */
+/* Stacked vertically — the left column is narrow by design, not the
+   wide horizontal strip the form used before the split-screen layout. */
+#add-task-form,
+#quick-add-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: stretch;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.field input,
+.field select {
+  padding: 10px 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  font-size: 0.95rem;
+  background: #fdfcfa;
+  width: 100%;
+}
+
+.field input:focus,
+.field select:focus,
+button:focus-visible {
+  outline: 3px solid #9fd4b6;
+  outline-offset: 1px;
+}
+
+.field__error {
+  min-height: 1em;
+  font-size: 0.78rem;
+  color: var(--danger);
+}
+
+#add-task-form .btn,
+#quick-add-form .btn {
+  align-self: stretch;
+}
+
+.btn {
+  padding: 10px 18px;
+  border-radius: 6px;
+  border: none;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  align-self: flex-end;
+  transition: transform 0.05s ease, opacity 0.15s ease;
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn--primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.btn--primary:hover {
+  background: var(--accent-dark);
+}
+
+.btn--accent {
+  background: var(--accent-ai);
+  color: #fff;
+}
+
+.btn--accent:hover {
+  opacity: 0.9;
+}
+
+.btn--ghost {
+  background: transparent;
+  border: 1px solid var(--panel-border);
+  color: var(--ink);
+}
+
+.btn--ghost:hover {
+  background: #efece4;
+}
+
+/* ------------------------------ Search box ------------------------------ */
+.search-box {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.search-box input {
+  padding: 8px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+}
+
+.search-box select {
+  padding: 8px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+}
+
+/* ------------------------------ Task list ------------------------------ */
+.task-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.task-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: #fdfcfa;
+}
+
+.task-item--high {
+  border-left: 4px solid var(--danger);
+}
+
+.task-item--medium {
+  border-left: 4px solid var(--accent-ai);
+}
+
+.task-item--low {
+  border-left: 4px solid var(--accent);
+}
+
+.task-item__main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.task-item__title {
+  font-weight: 600;
+}
+
+.task-item__meta {
+  font-size: 0.78rem;
+  color: var(--muted);
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.task-item__actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.task-item__actions button {
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--panel-border);
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.task-item__actions button:hover {
+  background: #efece4;
+}
+
+.task-item__actions .delete-btn:hover {
+  background: #fbe4e2;
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.empty-state {
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* ------------------------------ Init banner ------------------------------ */
+.init-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  background: #fbe4e2;
+  color: var(--danger);
+  border-bottom: 1px solid var(--danger);
+  font-size: 0.85rem;
+}
+
+/* ------------------------------ Loading bar ------------------------------ */
+.loading-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3px;
+  width: 100%;
+  z-index: 50;
+  overflow: hidden;
+  background: transparent;
+}
+
+.loading-bar::after {
+  content: "";
+  display: block;
+  height: 100%;
+  width: 40%;
+  background: var(--accent);
+  animation: loading-bar-slide 1s ease-in-out infinite;
+}
+
+@keyframes loading-bar-slide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+
+/* ------------------------------ Toasts ------------------------------ */
+.toast-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.toast {
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  animation: toast-in 0.15s ease-out;
+}
+
+.toast--success {
+  background: var(--accent-dark);
+}
+
+.toast--error {
+  background: var(--danger);
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ------------------------------ Disabled state ------------------------------ */
+button:disabled,
+input:disabled,
+select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ------------------------------ Breakpoints ------------------------------ */
+@media (max-width: 768px) {
+  .stats-bar {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  /* Stack the split screen into one column on narrower viewports — task
+     creation on top, sorting + list below. */
+  .split-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .panel--sticky {
+    position: static;
+    top: auto;
+  }
+}
+
+@media (max-width: 480px) {
+  .app-header {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 12px 16px;
+  }
+
+  .app-header__controls {
+    width: 100%;
+  }
+
+  .app-header__controls select {
+    flex: 1;
+  }
+
+  .app-main {
+    padding: 16px 12px 40px;
+  }
+
+  .stats-bar {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .panel__title-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .task-item {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .task-item__actions {
+    justify-content: flex-end;
+  }
+}
