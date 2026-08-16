@@ -1,144 +1,478 @@
 # TaskFlow
 
-Internal task-and-project management platform for Blinkit's dark-store engineering pods. One FastAPI + SQLAlchemy backend (CRUD, statistics, a hand-rolled sort/search engine, and an AI quick-add parser) with a vanilla HTML/CSS/JS dashboard wired to it over the Fetch API.
+TaskFlow is a simple task management web application built as a full-stack project. It lets users create and manage projects and tasks, search and sort tasks, view project statistics, and add tasks using a quick-add feature.
 
-## Environment setup
+The project uses FastAPI and SQLAlchemy for the backend and HTML, CSS, and JavaScript for the frontend.
 
-```bash
-git clone <this-repo-url>
-cd taskflow
-python3 -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-```
+## Project Structure
 
-## Running the app
 
-**Two-process run (recommended)** — backend on port 8000, frontend on a separate static server on port 5500. The backend's CORS config already allows `http://127.0.0.1:5500` / `http://localhost:5500`.
-
-```bash
-# Terminal 1 — backend
-uvicorn backend.main:app --reload --port 8000
-
-# Terminal 2 — frontend (any static server works)
-cd frontend
-python3 -m http.server 5500
-```
-
-Then open `http://127.0.0.1:5500`. The dashboard's `script.js` calls the backend at `http://127.0.0.1:8000` by default (override by setting `window.TASKFLOW_API_BASE` before `script.js` loads, e.g. in a small inline `<script>` tag).
-
-**Single-process alternative:** `main.py` also mounts `frontend/` as static files, so `uvicorn backend.main:app --reload` alone serves the whole app at `http://127.0.0.1:8000` with same-origin relative paths — no second server needed. Pick whichever run mode you prefer; both are wired to the same backend.
-
-On startup, the **backend itself** (not the frontend) creates tables and a default user + project if the database is empty — see "Startup & reliability" below. There's nothing to seed manually before the UI is usable. To seed extra sample data (used for manual testing) or generate the Section 2 benchmark data, see below.
-
-```bash
-python3 seed.py           # inserts ~30 sample tasks into a "Dark Store Rollout" project
-python3 benchmark.py      # Section 2 benchmark — see "Algorithms" below
-python3 check_algorithms.py   # Section 2 PASS/FAIL checks
-```
-
-## Startup & reliability
-
-Everything below runs from a single `@app.on_event("startup")` handler in `backend/main.py`, in this order, and every step is logged to the console so a hung or skipped step is visible immediately rather than silently failing:
-
-1. **`init_db()`** (`backend/database.py`) — checks the target directory is writable (raises a clear `PermissionError` if not, instead of an opaque failure on the first request), then calls `Base.metadata.create_all()`. If an existing SQLite file is corrupted or only partially written (`sqlite3.DatabaseError: file is not a database`), it's removed and recreated automatically, with a warning logged.
-2. **Bootstrap user** — `ops@taskflow.local` is created if it doesn't already exist; if it does (e.g. after a restart), creation is skipped and the existing row is reused. A concurrent-startup race (two processes creating it at once) is caught via `IntegrityError` + rollback and falls back to reading the row the other process just committed.
-3. **Bootstrap project** — created only after the bootstrap user exists (its `owner_id` FK depends on it), with the same idempotent get-or-create + race-safe pattern, so a valid project always exists before the frontend or any API client tries to create a task.
-
-**Error responses:** a `RequestValidationError` handler flattens Pydantic's nested errors into `{"detail": "Validation failed", "errors": [{"field": "...", "message": "..."}]}` so the frontend (and `curl`) get a specific, actionable message instead of a generic one. An `IntegrityError` handler catches constraint violations (e.g. a duplicate unique value slipping past an application-level check) and returns a clear `422` instead of a `500`. A catch-all `Exception` handler guarantees every response — including truly unexpected errors — is JSON, never an HTML error page, and logs the full traceback server-side.
-
-**Logging:** the request-logging middleware now logs every request's method/path/status/duration, and adds a second, more detailed `WARNING` line for any response ≥400 (including query params and client host) so failures are easy to find in the console without reproducing them.
-
-**Frontend ↔ backend address:** `frontend/script.js` calls `http://127.0.0.1:8000` by default (`API_BASE`), matching the `uvicorn ... --port 8000` command above. Override it by setting `window.TASKFLOW_API_BASE` in an inline `<script>` tag before `script.js` loads if you run the backend on a different host/port — the CORS config's `FRONTEND_ORIGIN` env var and this value need to agree with wherever each side is actually running.
-
-## Database schema
-
-Three tables, `users` → `projects` → `tasks`, defined as SQLAlchemy ORM models in `backend/models.py`:
-
-- **users**: `id` PK, `email` UNIQUE NOT NULL, `name` NOT NULL
-- **projects**: `id` PK, `name` NOT NULL, `description`, `owner_id` FK → `users.id` NOT NULL
-- **tasks**: `id` PK, `title` NOT NULL, `description`, `priority` (CHECK constraint, `'low' | 'medium' | 'high'`), `due_date` TEXT nullable (intentionally plain text — holds both manually-typed dates and AI-parsed phrases like `"next friday"`), `status`, `project_id` FK → `projects.id` NOT NULL
-
-`User.projects` ↔ `Project.owner`, and `Project.tasks` ↔ `Task.project` are wired with `relationship(..., back_populates=...)` on both sides.
-
-## Endpoints
-
-All endpoints share one `get_db` dependency (`backend/database.py`) and one FastAPI app (`backend/main.py`). A logging middleware prints `METHOD /path completed in X.XXms` for every request.
-
-| Method | Path | Example request | Example response |
-|---|---|---|---|
-| POST | `/users` | `{"email":"lead@blinkit.com","name":"Pod Lead"}` | `201` `{"id":1,"email":"lead@blinkit.com","name":"Pod Lead"}` |
-| GET | `/users` | — | `200` `[{"id":1,"email":"lead@blinkit.com","name":"Pod Lead"}]` |
-| POST | `/projects` | `{"name":"Cold Chain","owner_id":1}` | `201` `{"id":1,"name":"Cold Chain","description":null,"owner_id":1}` |
-| GET | `/projects` | — | `200` `[{"id":1,"name":"Cold Chain","description":null,"owner_id":1}]` |
-| GET | `/projects/{id}` | — | `200` `{"id":1,"name":"Cold Chain","description":null,"owner_id":1}` / `404` if missing |
-| GET | `/projects/{id}/stats` | — | `200` `{"project_id":1,"project_name":"Cold Chain","task_count":3,"status_counts":{"todo":3}}` |
-| POST | `/tasks` | `{"title":"Fix freezer sensor","priority":"high","project_id":1}` | `201` `{"id":1,"title":"Fix freezer sensor","description":null,"priority":"high","due_date":null,"status":"todo","project_id":1}` / `422` on blank title or bad `project_id` |
-| GET | `/tasks?project_id=1&sort=priority` | — | `200` list of tasks ordered by `insertion_sort` (low→high) |
-| GET | `/tasks/{id}` | — | `200` task / `404` if missing |
-| PUT | `/tasks/{id}` | `{"status":"done"}` | `200` updated task / `404` if missing |
-| DELETE | `/tasks/{id}` | — | `200` `{"detail":"Task deleted","id":1}` / `404` if missing |
-| GET | `/tasks/search?title=Restock%20aisle%203&algo=binary` | — | `200` matching task / `404` if no exact-title match |
-| POST | `/tasks/quick-add` | `{"description":"Fix the freezer, it's urgent","project_id":1}` | `201` `{"id":5,"title":"Fix the freezer, it's","priority":"high","due_date":null,...}` / `422` on malformed body or bad `project_id` |
-
-All of the above were exercised end-to-end with `curl` during development (create, list, get-by-id, update, delete, statistics across two projects with different task counts, sorted list, binary/linear search including a 404 case, and quick-add including a 422 case) — see commit history.
-
-## Algorithms (Section 2)
-
-`backend/algorithms.py` implements `insertion_sort`, `binary_search`, and `linear_search` from scratch (never `sorted()`/`.sort()`), plus comparison-counting wrapper versions (`insertion_sort_count`, `binary_search_count`, `linear_search_count`) used only for benchmarking. `GET /tasks?sort=priority|due_date` and `GET /tasks/search` are the two live endpoints that call these functions directly on real database rows — see `main.py`. `binary_search`/`linear_search` return `None` (not `-1`) when a target isn't found.
-
-**Complexity:**
-
-| Function | Best case | Worst case |
-|---|---|---|
-| `insertion_sort` | O(n) — already sorted | O(n²) — reverse sorted |
-| `binary_search` | O(1) — target at midpoint | O(log n) |
-| `linear_search` | O(1) — target at index 0 | O(n) |
-
-**Benchmark results** (comparison counts, from `benchmark.py`, synthetic task dicts shaped like the real `title`/`priority`/`due_date` fields, 3 sizes; raw output also in `benchmark_results.txt`):
-
-```
-  size |   insertion_sort (title) |  binary_search (title) |  linear_search (title)
-------------------------------------------------------------------------------------------
-    10 |                       31 |                      3 |                      1
-   500 |                    64696 |                      8 |                    442
-  3000 |                  2264605 |                     11 |                   2860
-```
-
-**Is sorting-first worth it?** Sorting 3,000 tasks costs ~2.26M comparisons — a real, measurable up-front cost — but a team is described as listing/sorting their task list repeatedly through the day while adding or renaming tasks far less often. `GET /tasks?sort=priority` re-sorts from scratch on every call rather than persisting an order, so in TaskFlow's actual usage pattern that sort cost is paid on every read, not amortized across writes. For the realistic pod size (tens to low hundreds of open tasks, not 3,000), the sort cost stays small in absolute terms (well under 100k comparisons at n=500), and the payoff — binary search dropping to single-digit/low-double-digit comparisons versus linear search's up to n comparisons on `GET /tasks/search` — is worth it precisely because search is also a frequent read. At genuinely large n the O(n²) sort becomes the dominant cost and would be worth revisiting (e.g. sorting once and caching), but at TaskFlow's expected scale the current approach is the right trade-off.
-
-## AI Quick-Add (Section 3)
-
-`POST /tasks/quick-add` accepts `{"description": "...", "project_id": ...}`, builds a role-based prompt (`build_prompt_messages` in `backend/ai_parser.py` — a `system` message describing the parsing behavior + a `user` message carrying the free text) and, by default, resolves it with a deterministic, rule-based mock parser (`mock_parse_task`) that needs no API key and makes no network calls. An optional real-LLM path exists behind `USE_REAL_LLM` (unset/false by default) and falls back to the mock automatically if the flag is off or the call fails — grading runs with the flag off and no key present. Whatever the mock (or real path) produces is validated against the same `TaskCreate` Pydantic model the rest of the app uses before anything is written; a validation failure or unknown `project_id` returns `422` with no row created.
-
-**Prompting technique:** the system message is a single, direct instruction set with no embedded examples — i.e. **zero-shot**, not few-shot or chain-of-thought. This fits the mock's fully deterministic algorithm: because the parsing logic is exact keyword-matching with a fixed rule order (not a model doing open-ended reasoning), there's nothing for few-shot examples or CoT scratch-space to disambiguate — adding either would just spend tokens without improving reliability. If the optional real-LLM path is used instead, the same zero-shot message would likely need to move toward few-shot (2-3 input/output pairs matching the exact algorithm below) to keep a real model's output format reliable, at the cost of a larger prompt and higher token usage per call.
-
-**Five worked examples** (verified against the running mock):
-
-| Input | Output |
-|---|---|
-| `"This is urgent, mark it ASAP please"` | `{"title": "This is , mark it please", "priority": "high", "due_date_hint": null}` |
-| `" "` (whitespace only) | `{"title": "Untitled task", "priority": "medium", "due_date_hint": null}` |
-| `"Finish the report next Friday, it's urgent"` | `{"title": "Finish the report , it's", "priority": "high", "due_date_hint": "next friday"}` |
-| `"tomorrow review tomorrow"` | `{"title": "review", "priority": "medium", "due_date_hint": "tomorrow"}` |
-| `"Whenever you get a chance, restock the shelves on monday"` | `{"title": "you get a chance, restock the shelves on", "priority": "low", "due_date_hint": "monday"}` |
-
-## Repository layout
-
-```
 taskflow/
-├── backend/            # FastAPI app: CRUD + stats (Sec 1), sort/search (Sec 2), quick-add (Sec 3)
+├── backend/
 │   ├── main.py
 │   ├── models.py
 │   ├── schemas.py
 │   ├── database.py
 │   ├── algorithms.py
 │   └── ai_parser.py
-├── frontend/            # index.html, styles.css, script.js — calls the real backend
-├── seed.py
+├── frontend/
+│   ├── index.html
+│   ├── styles.css
+│   └── script.js
 ├── benchmark.py
 ├── benchmark_results.txt
 ├── check_algorithms.py
+├── seed.py
 ├── requirements.txt
 └── README.md
+
+
+## Setup
+
+First, clone the repository and open the project folder:
+
+```bash
+git clone https://github.com/AadityaSingh-arch/MASAI_Capstone_Project.git
+cd taskflow
 ```
+
+Create a virtual environment:
+
+```bash
+python -m venv venv
+```
+
+Activate it.
+
+
+```bash
+venv\Scripts\activate
+```
+
+Install the required packages:
+
+```bash
+pip install -r requirements.txt
+```
+
+## Running the App
+
+Start the backend from the project root:
+
+```bash
+uvicorn backend.main:app --reload --port 8000
+```
+
+Then open another terminal, go into the frontend folder, and start the frontend server:
+
+```bash
+cd frontend
+python -m http.server 5500
+```
+
+Now open the following in your browser:
+
+```text
+http://127.0.0.1:5500
+```
+
+The backend runs at:
+
+```text
+http://127.0.0.1:8000
+```
+
+FastAPI's API documentation can be viewed at:
+
+```text
+http://127.0.0.1:8000/docs
+```
+
+The SQLite database and its tables are created automatically when the backend starts.
+
+## API Endpoints
+
+The main API endpoints are listed below.
+
+| Category       | Method | Path                           |
+| -------------- | ------ | ------------------------------ |
+| Create User    | POST   | `/users`                       |
+| List Users     | GET    | `/users`                       |
+| Create Project | POST   | `/projects`                    |
+| List Projects  | GET    | `/projects`                    |
+| Get Project    | GET    | `/projects/{project_id}`       |
+| Statistics     | GET    | `/projects/{project_id}/stats` |
+| Create Task    | POST   | `/tasks`                       |
+| List Tasks     | GET    | `/tasks`                       |
+| Sorted List    | GET    | `/tasks?sort=priority`         |
+| Get Task       | GET    | `/tasks/{task_id}`             |
+| Update Task    | PUT    | `/tasks/{task_id}`             |
+| Delete Task    | DELETE | `/tasks/{task_id}`             |
+| Search         | GET    | `/tasks/search`                |
+| Quick-Add      | POST   | `/tasks/quick-add`             |
+
+### Create
+
+```http
+POST /tasks
+```
+
+Request:
+
+```json
+{
+  "title": "Fix freezer sensor",
+  "description": "Inspect temperature sensor",
+  "priority": "high",
+  "due_date": "2026-08-20",
+  "status": "todo",
+  "project_id": 1
+}
+```
+
+Response:
+
+```json
+{
+  "id": 1,
+  "title": "Fix freezer sensor",
+  "description": "Inspect temperature sensor",
+  "priority": "high",
+  "due_date": "2026-08-20",
+  "status": "todo",
+  "project_id": 1
+}
+```
+
+### List
+
+```http
+GET /tasks?project_id=1
+```
+
+Response:
+
+```json
+[
+  {
+    "id": 1,
+    "title": "Fix freezer sensor",
+    "priority": "high",
+    "status": "todo",
+    "project_id": 1
+  }
+]
+```
+
+### Get by ID
+
+```http
+GET /tasks/1
+```
+
+Response:
+
+```json
+{
+  "id": 1,
+  "title": "Fix freezer sensor",
+  "priority": "high",
+  "status": "todo",
+  "project_id": 1
+}
+```
+
+### Update
+
+```http
+PUT /tasks/1
+```
+
+Request:
+
+```json
+{
+  "status": "done"
+}
+```
+
+Response:
+
+```json
+{
+  "id": 1,
+  "title": "Fix freezer sensor",
+  "priority": "high",
+  "status": "done",
+  "project_id": 1
+}
+```
+
+### Delete
+
+```http
+DELETE /tasks/1
+```
+
+Response:
+
+```json
+{
+  "detail": "Task deleted",
+  "id": 1
+}
+```
+
+### Statistics
+
+```http
+GET /projects/1/stats
+```
+
+Response:
+
+```json
+{
+  "project_id": 1,
+  "project_name": "Cold Chain",
+  "task_count": 3,
+  "status_counts": {
+    "todo": 2,
+    "done": 1
+  }
+}
+```
+
+### Sorted List
+
+Tasks can be sorted by priority or due date.
+
+```http
+GET /tasks?project_id=1&sort=priority
+```
+
+Response:
+
+```json
+[
+  {
+    "id": 2,
+    "title": "Update documentation",
+    "priority": "low",
+    "status": "todo"
+  },
+  {
+    "id": 1,
+    "title": "Fix freezer sensor",
+    "priority": "high",
+    "status": "todo"
+  }
+]
+```
+
+The sorting is handled by the hand-written insertion sort in `backend/algorithms.py`.
+
+### Search
+
+```http
+GET /tasks/search?title=Fix%20freezer%20sensor&algo=binary
+```
+
+Response:
+
+```json
+{
+  "id": 1,
+  "title": "Fix freezer sensor",
+  "priority": "high",
+  "status": "todo"
+}
+```
+
+Both binary search and linear search are supported.
+
+### Quick-Add
+
+```http
+POST /tasks/quick-add
+```
+
+Request:
+
+```json
+{
+  "description": "Finish the report next Friday, it's urgent",
+  "project_id": 1
+}
+```
+
+Response:
+
+```json
+{
+  "id": 5,
+  "title": "Finish the report, it's",
+  "priority": "high",
+  "due_date": "next friday",
+  "status": "todo"
+}
+```
+
+## Algorithms
+
+The required algorithms are implemented manually in `backend/algorithms.py`.
+
+### Insertion Sort
+
+Insertion sort is used for the task sorting functionality.
+
+* Best case: **O(n)**
+* Average case: **O(n²)**
+* Worst case: **O(n²)**
+* Space: **O(1)**
+
+### Binary Search
+
+Binary search is used for searching task titles after sorting them.
+
+* Best case: **O(1)**
+* Average case: **O(log n)**
+* Worst case: **O(log n)**
+* Space: **O(1)**
+
+### Linear Search
+
+Linear search is included as a comparison with binary search.
+
+* Best case: **O(1)**
+* Average case: **O(n)**
+* Worst case: **O(n)**
+* Space: **O(1)**
+
+### Benchmark Results
+
+The benchmark measures the number of comparisons made by each algorithm.
+
+| Input Size | Insertion Sort | Binary Search | Linear Search |
+| ---------: | -------------: | ------------: | ------------: |
+|         10 |             31 |             3 |             1 |
+|        500 |         64,696 |             8 |           442 |
+|      3,000 |      2,264,605 |            11 |         2,860 |
+
+These results match the expected behavior: insertion sort becomes much more expensive as the input grows, while binary search increases very slowly.
+
+Run the benchmark with:
+
+```bash
+python benchmark.py
+```
+
+The algorithm checks can be run with:
+
+```bash
+python check_algorithms.py
+```
+
+## AI Quick-Add
+
+The Quick-Add feature is designed to turn a short natural-language description into a task.
+
+For example:
+
+> Finish the report next Friday, it's urgent
+
+can be interpreted as:
+
+```text
+Title: Finish the report
+Priority: High
+Due date: Next Friday
+```
+
+The required mock parser works completely locally. It does not need an API key, internet connection, or paid AI service.
+
+The parser looks for common priority and date phrases such as:
+
+* `urgent`
+* `ASAP`
+* `whenever`
+* `today`
+* `tomorrow`
+* weekdays
+* `next week`
+
+## Prompting Technique
+
+The project uses a zero-shot prompting approach for the quick-add feature.
+
+The system instructions explain what information needs to be extracted from the user's text. No example conversations are required for the basic parser.
+
+This approach was chosen because the required parser is deterministic and rule-based. Keeping the instructions simple makes the result predictable and avoids depending on an external AI service.
+
+A real LLM implementation can be added optionally, but it is disabled by default and is not required to run the project.
+
+## Five Quick-Add Examples
+
+### Example 1
+
+Input:
+
+```text
+This is urgent, mark it ASAP please
+```
+
+Result:
+
+```text
+Priority: high
+Due date: none
+```
+
+### Example 2
+
+Input:
+
+```text
+Finish the report tomorrow
+```
+
+Result:
+
+```text
+Priority: medium
+Due date: tomorrow
+```
+
+### Example 3
+
+Input:
+
+```text
+Finish the report next Friday, it's urgent
+```
+
+Result:
+
+```text
+Priority: high
+Due date: next friday
+```
+
+## Git Workflow
+
+The project was developed using a feature-branch workflow. The repository contains multiple commits on a feature branch followed by a merge back into `main`.
+
+The history can be checked using:
+
+```bash
+git log --graph --all --oneline
+```
+
+## Requirements
+
+* Python 3
+* Packages listed in `requirements.txt`
+* No paid API or subscription
+* No API key required for the grading version
+
+Everything required to run and test the project is contained in this repository.
